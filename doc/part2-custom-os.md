@@ -55,4 +55,56 @@ Le message d'erreur était clair : le noyau ne trouvait pas la partition racine.
 1. Retourner dans `make menuconfig` via le chroot.
 2. S'assurer que les pilotes essentiels étaient compilés **en dur (`*`)** dans le noyau. Après plusieurs essais, la méthode la plus robuste a été d'utiliser un **initramfs**.
 3. Installer l'outil de génération d'initramfs : `emerge sys-kernel/dracut`.
-4. Compiler les pilotes de disque (`AHCI S
+4. Compiler les pilotes de disque (`AHCI S_ATA support`, `VMware PVSCSI driver`) en tant que **modules (`<M>`)**.
+5. Générer un initramfs en forçant l'inclusion de ces pilotes :
+   ```bash
+   dracut --force --force-drivers "ahci vmw_pvscsi" /boot/initramfs-mon-os.img <version-kernel>
+   ```
+6. Mettre à jour `/boot/grub/grub.cfg` pour charger cet initramfs avec la directive `initrd`.
+
+**Résultat :**
+Le `Kernel Panic` a disparu, mais le processus de démarrage s'arrêtait dans le shell de débogage de `dracut`.
+
+---
+
+## Problème 4 : Erreur Dracut - "UUID does not exist" et Shell de Débogage
+
+**Symptôme :**
+L'initramfs se chargeait, mais affichait une erreur `dracut Warning: /dev/disk/by-uuid/XXXXXXXX does not exist` et ouvrait un shell de débogage.
+
+**Diagnostic :**
+Le pilote de disque était maintenant bien chargé (la preuve est que `dracut` pouvait chercher des disques), mais l'UUID de la partition racine spécifié dans `grub.cfg` était incorrect. Dans le shell de débogage, la commande `ls -l /dev/sd*` a renvoyé "No such file or directory", confirmant que même l'initramfs n'avait pas le bon pilote.
+
+**Solution (Itération Finale) :**
+1. Retourner dans `make menuconfig` pour compiler les pilotes de disque en tant que **modules `<M>`**.
+2. Lancer `make modules_install` pour installer les fichiers `.ko`.
+3. Régénérer l'initramfs en forçant l'inclusion des pilotes avec `dracut --force --force-drivers "ahci vmw_pvscsi" ...`.
+4. Modifier `/boot/grub/grub.cfg` pour utiliser un identifiant de partition plus simple et fiable : `root=/dev/sda5`.
+5. Modifier `/etc/default/grub` en ajoutant `GRUB_DISABLE_LINUX_UUID=true` pour rendre ce changement permanent.
+
+---
+
+## Problème 5 : Pas de prompt après le démarrage réseau
+
+**Symptôme :**
+Le système démarrait, obtenait une adresse IP via DHCP, mais le prompt du shell n'apparaissait jamais.
+
+**Diagnostic :**
+Le script de démarrage `/etc/rc` lançait le client DHCP `udhcpc` en **premier plan**. Comme `udhcpc` est un processus qui tourne en continu, il bloquait l'exécution du script `rc`. Le processus `init` attendait donc indéfiniment que `/etc/rc` se termine et ne lançait jamais le shell de login.
+
+**Solution :**
+1. Modifier `/etc/rc`.
+2. Changer la ligne de commande `/sbin/udhcpc -f -i "$INTERFACE"` en `/sbin/udhcpc -i "$INTERFACE" &`.
+3. Le `&` à la fin lance le processus `udhcpc` en **arrière-plan**, ce qui permet au script `rc` de se terminer et au processus `init` de lancer le shell.
+
+---
+
+## Victoire : Système Fonctionnel
+
+Après ces étapes de débogage, le système d'exploitation personnalisé démarre correctement, active le réseau, obtient une adresse IP, et fournit un shell interactif. La connectivité Internet a été confirmée par un `ping 8.8.8.8`.
+
+**Leçons apprises :**
+- L'importance de la cohérence entre le mode de démarrage (BIOS/UEFI) et l'installation du bootloader.
+- La différence critique entre une console Framebuffer et une console VGA texte.
+- La nécessité d'inclure les pilotes matériels (disque, réseau) dans le noyau ou, de manière plus robuste, dans un initramfs.
+- La gestion des processus en premier plan vs arrière-plan dans les scripts de démarrage.
