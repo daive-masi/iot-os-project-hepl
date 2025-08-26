@@ -208,8 +208,3 @@ La clé USB est désormais **bootable** et contient :
 | UUID des partitions     | `blkid`                                     |
 | Montage des partitions  | `mount \| grep sdb`                         |
 
----
-
-### Message de Commit pour Git
-```bash
-git add etape
