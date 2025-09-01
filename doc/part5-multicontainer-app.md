@@ -265,4 +265,4 @@ Cette étape a permis de déployer une application multi-containers en utilisant
 
 ---
 
-*Lien vers les fichiers de configuration : [Dockerfiles et docker-compose.yml](../config_files/docker/)*
+
